@@ -9,6 +9,7 @@ const sortArray = require('sort-array')
 const moment = require('moment')
 const slugify = require('slugify')
 const md5File = require('md5-file')
+const sharp = require('sharp')
 
 /**
  * Index of the databases and their URLs.
@@ -137,7 +138,7 @@ async function constructDats() {
 						developer = developer.substring(3)
 					}
 
-					const destcart = 'carts/' + cleanValue(name) + '.tic'
+					const destcart = 'carts/' + cleanTitle(name) + '.tic'
 					if (!fs.existsSync(destcart)) {
 						const opts = {
 							url: downloadUrl,
@@ -159,6 +160,18 @@ async function constructDats() {
 
 					const stat = fs.statSync(destcart)
 					const size = stat.size
+
+					// Thumbnail
+					const destcover = 'thumbnails/Named_Titles/' + cleanTitle(name) + '.png'
+					if (!fs.existsSync(destcover)) {
+						const requestOpts = {
+							url: `https://tic.computer/cart/${id}/cover.gif`,
+							encoding: null
+						}
+						cover = await request(requestOpts)
+						await sharp(cover)
+							.toFile(destcover)
+					}
 
 					entries.push({
 						name: cleanTitle(name),

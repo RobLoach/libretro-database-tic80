@@ -1,3 +1,6 @@
 [submodule "libretro-database"]
 	path = libretro-database
 	url = https://github.com/libretro/libretro-database.git
+[submodule "thumbnails"]
+	path = thumbnails
+	url = git@github.com:libretro-thumbnails/TIC-80.git
