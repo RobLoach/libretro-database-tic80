@@ -11,6 +11,8 @@ const slugify = require('slugify')
 const md5File = require('md5-file')
 const sharp = require('sharp')
 
+const {crc32} = require('crc')
+
 /**
  * Index of the databases and their URLs.
  */
@@ -86,7 +88,7 @@ function datEntry(game) {
 	return `
 game (
 	name "${cleanValue(game.name)}"${gameEntries}
-	rom ( name "${cleanValue(game.name)}.tic" size "${cleanValue(game.size)}" md5 "${cleanValue(game.md5)}" )
+	rom ( name "${cleanValue(game.name)}.tic" size "${cleanValue(game.size)}" md5 "${cleanValue(game.md5)}" crc ${cleanValue(game.crc)} )
 )
 `
 }
@@ -173,10 +175,13 @@ async function constructDats() {
 							.toFile(destcover)
 					}
 
+					const crcVal = crc32(fs.readFileSync(destcart, 'utf8')).toString(16)
+
 					entries.push({
 						name: cleanTitle(name),
 						id: id,
 						size: size,
+						crc: crcVal,
 						download: downloadUrl,
 						md5: md5,
 						cartid: cartid,
