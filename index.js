@@ -175,7 +175,7 @@ async function constructDats() {
 							.toFile(destcover)
 					}
 
-					const crcVal = crc32(fs.readFileSync(destcart, 'utf8')).toString(16)
+					const crcVal = crc32(fs.readFileSync(destcart)).toString(16)
 
 					entries.push({
 						name: cleanTitle(name),
