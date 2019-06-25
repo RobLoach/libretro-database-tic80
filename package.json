@@ -1,7 +1,7 @@
 {
   "name": "libretro-database-tic80",
   "homepage": "https://github.com/robloach/libretro-database-tic80",
-  "version": "0.0.1",
+  "version": "2019.6.25",
   "private": true,
   "description": "",
   "main": "index.js",
