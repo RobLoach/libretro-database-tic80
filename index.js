@@ -2,6 +2,7 @@ const mkdirp = require('mkdirp')
 const timeout = require('await-timeout')
 const request = require('request-promise');
 const cheerio = require('cheerio')
+const download = require('download')
 const titleCase = require('title-case')
 const fs = require('fs')
 const pkg = require('./package.json')
@@ -142,18 +143,9 @@ async function constructDats() {
 
 					const destcart = 'carts/' + cleanTitle(name) + '.tic'
 					if (!fs.existsSync(destcart)) {
-						const opts = {
-							url: downloadUrl,
-							encoding: null
-						}
-						let cartRes = null
-						try {
-							cartRes = await request(opts)
-						}
-						catch (error) {
-							console.error(error)
-						}
-						fs.writeFileSync(destcart, cartRes)
+						await download(downloadUrl, 'carts', {
+							filename: cleanTitle(name) + '.tic'
+						})
 
 						await timeout.set(500)
 					}
@@ -164,6 +156,7 @@ async function constructDats() {
 					const size = stat.size
 
 					// Thumbnail
+					mkdirp.sync('thumbnails/Named_Titles')
 					const destcover = 'thumbnails/Named_Titles/' + cleanTitle(name) + '.png'
 					if (!fs.existsSync(destcover)) {
 						const requestOpts = {
@@ -171,6 +164,7 @@ async function constructDats() {
 							encoding: null
 						}
 						cover = await request(requestOpts)
+						await timeout.set(500)
 						await sharp(cover)
 							.toFile(destcover)
 					}
@@ -198,6 +192,7 @@ async function constructDats() {
 				outputDat += datEntry(entry)
 			}
 
+			mkdirp.sync('libretro-database/dat')
 			fs.writeFileSync('libretro-database/dat/' + databaseName + '.dat', outputDat)
 		})
 
