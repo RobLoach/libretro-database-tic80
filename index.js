@@ -113,6 +113,22 @@ function cleanTitle(title) {
 	return output.trim()
 }
 
+async function getThumbnail(id, name) {
+	// Thumbnail
+	mkdirp.sync('thumbnails/Named_Titles')
+	const destcover = 'thumbnails/Named_Titles/' + cleanTitle(name) + '.png'
+	if (!fs.existsSync(destcover)) {
+		const requestOpts = {
+			url: `https://tic.computer/cart/${id}/cover.gif`,
+			encoding: null
+		}
+		cover = await request(requestOpts)
+		await timeout.set(500)
+		await sharp(cover)
+			.toFile(destcover)
+	}
+}
+
 /**
  * Scrap information and construct the DATs.
  */
@@ -129,12 +145,13 @@ async function constructDats() {
 
 			for (let html of datas) {
 				const $ = cheerio.load(html)
-				$('div.cart').each(async (index, element) => {
+				const result = $('div.cart').map(async (index, element) => {
 					const id = $('img', element).attr('src').split('/')[2]
 					const cartid = $('.thumbnail a', element).attr('href').split('=')[1]
 					let name = $('h2', element).text()
 					const downloadUrl = `https://tic.computer/cart/${id}/cart.tic`
 					name = titleCase(name)
+					console.log(name)
 					const description = $('.text-muted', element).first().text()
 					let developer = $('.text-muted', element).last().text()
 					if (developer.startsWith('by ')) {
@@ -155,23 +172,11 @@ async function constructDats() {
 					const stat = fs.statSync(destcart)
 					const size = stat.size
 
-					// Thumbnail
-					mkdirp.sync('thumbnails/Named_Titles')
-					const destcover = 'thumbnails/Named_Titles/' + cleanTitle(name) + '.png'
-					if (!fs.existsSync(destcover)) {
-						const requestOpts = {
-							url: `https://tic.computer/cart/${id}/cover.gif`,
-							encoding: null
-						}
-						cover = await request(requestOpts)
-						await timeout.set(500)
-						await sharp(cover)
-							.toFile(destcover)
-					}
+					getThumbnail(id, name)
 
 					const crcVal = crc32(fs.readFileSync(destcart)).toString(16)
 
-					entries.push({
+					return {
 						name: cleanTitle(name),
 						id: id,
 						size: size,
@@ -182,18 +187,25 @@ async function constructDats() {
 						homepage: cartid ? "https://tic.computer/play?cart=" + cartid : '',
 						description: description,
 						developer: developer
-					})
+					}
 				})
+
+				for (const item of result.get()) {
+					entries.push(item)
+				}
 			}
 
 			let outputDat = header(databaseName, pkg.version, pkg.homepage)
-			entries = sortArray(entries, ['name', 'cartid'])
-			for (let entry of entries) {
-				outputDat += datEntry(entry)
-			}
 
-			mkdirp.sync('libretro-database/dat')
-			fs.writeFileSync('libretro-database/dat/' + databaseName + '.dat', outputDat)
+			Promise.all(entries).then((entries) => {
+				entries = sortArray(entries, ['name', 'cartid'])
+				for (let entry of entries) {
+					outputDat += datEntry(entry)
+				}
+
+				mkdirp.sync('libretro-database/dat')
+				fs.writeFileSync('libretro-database/dat/' + databaseName + '.dat', outputDat)
+			})
 		})
 
 	}
