@@ -1,6 +1,10 @@
 [submodule "libretro-database"]
 	path = libretro-database
 	url = https://github.com/libretro/libretro-database.git
+	branch = master
+	ignore = dirty
 [submodule "thumbnails"]
 	path = thumbnails
 	url = git@github.com:libretro-thumbnails/TIC-80.git
+	branch = master
+	ignore = dirty
