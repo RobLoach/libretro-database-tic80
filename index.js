@@ -117,8 +117,8 @@ function cleanTitle(title) {
 
 async function getThumbnail(id, name) {
 	// Thumbnail
-	mkdirp.sync('thumbnails/Named_Titles')
-	const destcover = 'thumbnails/Named_Titles/' + cleanTitle(name) + '.png'
+	mkdirp.sync('thumbnails/Named_Boxarts')
+	const destcover = 'thumbnails/Named_Boxarts/' + cleanTitle(name) + '.png'
 	if (!fs.existsSync(destcover)) {
 		const requestOpts = {
 			url: `https://tic.computer/cart/${id}/cover.gif`,
