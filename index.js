@@ -160,10 +160,11 @@ async function constructDats() {
 						developer = developer.substring(3)
 					}
 
-					const destcart = 'carts/' + cleanTitle(name) + '.tic'
+					const destcartfilename = `${cleanTitle(name)} [${id}].tic`
+					const destcart = 'carts/' + destcartfilename
 					if (!fs.existsSync(destcart)) {
 						await download(downloadUrl, 'carts', {
-							filename: cleanTitle(name) + '.tic'
+							filename: destcartfilename
 						})
 
 						await timeout.set(500)
