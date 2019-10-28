@@ -120,12 +120,13 @@ async function getThumbnail(id, name) {
 	mkdirp.sync('thumbnails/Named_Boxarts')
 	const destcover = 'thumbnails/Named_Boxarts/' + cleanTitle(name) + '.png'
 	if (!fs.existsSync(destcover)) {
+		//await timeout.set(500)
 		const requestOpts = {
 			url: `https://tic.computer/cart/${id}/cover.gif`,
 			encoding: null
 		}
 		cover = await request(requestOpts)
-		await timeout.set(500)
+		//await timeout.set(500)
 		await sharp(cover)
 			.toFile(destcover)
 	}
@@ -167,7 +168,7 @@ async function constructDats() {
 							filename: destcartfilename
 						})
 
-						await timeout.set(500)
+						//await timeout.set(500)
 					}
 
 					const md5 = md5File.sync(destcart)
@@ -175,6 +176,7 @@ async function constructDats() {
 					const stat = fs.statSync(destcart)
 					const size = stat.size
 
+					//await timeout.set(500)
 					getThumbnail(id, name)
 
 					const crcVal = crc32(fs.readFileSync(destcart)).toString(16)
