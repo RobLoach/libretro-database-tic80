@@ -201,8 +201,10 @@ async function constructDats() {
 			let outputDat = header(databaseName, pkg.version, pkg.homepage)
 
 			Promise.all(entries).then((entries) => {
-				entries = sortArray(entries, ['name', 'cartid'])
-				for (let entry of entries) {
+				let sorted = sortArray(entries, {
+					by: ['name', 'cartid']
+				})
+				for (let entry of sorted) {
 					outputDat += datEntry(entry)
 				}
 

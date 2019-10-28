@@ -1,9 +1,9 @@
 {
   "name": "libretro-database-tic80",
   "homepage": "https://github.com/robloach/libretro-database-tic80",
-  "version": "2019.6.25",
+  "version": "2019.10.28",
   "private": true,
-  "description": "",
+  "description": "Builds a TIC-80 database for libretro-database.",
   "main": "index.js",
   "scripts": {
     "test": "node index.js"
