@@ -104,10 +104,16 @@ function cleanTitle(title) {
 		return null
 	}
 	let output = title
+		.replace('Iiiii', 'IIIII')
+		.replace('Vvvvv', 'VVVVV')
 		.replace('Fps', 'FPS')
+		.replace('Wcq', 'WCQ')
 		.replace('3 D', '3D')
 		.replace('V1 ', 'v1')
+		.replace('Oop ', 'OOP')
+		.replace('Tic ', 'TIC ')
 		.replace('Thetextquest', 'TheTextQuest')
+		.replace('Oneminuteescape', 'OneMinuteEscape')
 		.replace('Tic 80', 'TIC-80')
 		.replace('Rpg', 'RPG')
 		.replace('Rps', 'RPS')
@@ -118,7 +124,18 @@ function cleanTitle(title) {
 async function getThumbnail(id, name) {
 	// Thumbnail
 	mkdirp.sync('thumbnails/Named_Boxarts')
-	const destcover = 'thumbnails/Named_Boxarts/' + cleanTitle(name) + '.png'
+	let thumbFilename = cleanTitle(name)
+		.replace('/', '')
+		.replace('*', '')
+		.replace('[', '')
+		.replace(']', '')
+		.replace('&', '')
+		.replace('\\', '')
+		.replace(':', '')
+		.replace('`', '')
+		.replace('|', '')
+		.replace('"', '')
+	const destcover = 'thumbnails/Named_Boxarts/' + thumbFilename + '.png'
 	if (!fs.existsSync(destcover)) {
 		//await timeout.set(500)
 		const requestOpts = {
@@ -161,7 +178,7 @@ async function constructDats() {
 						developer = developer.substring(3)
 					}
 
-					const destcartfilename = `${cleanTitle(name)} [${id}].tic`
+					const destcartfilename = `${id}.tic`
 					const destcart = 'carts/' + destcartfilename
 					if (!fs.existsSync(destcart)) {
 						await download(downloadUrl, 'carts', {
