@@ -105,7 +105,7 @@ function cleanTitle(title) {
 	}
 	let output = title
 		.replace('Iiiii', 'IIIII')
-		.replace('Vvvvv', 'VVVVV')
+		.replace('Vvvvvv', 'VVVVVV')
 		.replace('Fps', 'FPS')
 		.replace('Wcq', 'WCQ')
 		.replace('3 D', '3D')
@@ -115,6 +115,7 @@ function cleanTitle(title) {
 		.replace('Thetextquest', 'TheTextQuest')
 		.replace('Oneminuteescape', 'OneMinuteEscape')
 		.replace('Tic 80', 'TIC-80')
+		.replace('TIC 80', 'TIC-80')
 		.replace('Rpg', 'RPG')
 		.replace('Rps', 'RPS')
 
