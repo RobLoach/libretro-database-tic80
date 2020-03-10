@@ -3,7 +3,7 @@ const timeout = require('await-timeout')
 const request = require('request-promise');
 const cheerio = require('cheerio')
 const download = require('download')
-const titleCase = require('title-case')
+const {titleCase} = require('title-case')
 const fs = require('fs')
 const pkg = require('./package.json')
 const sortArray = require('sort-array')
@@ -11,7 +11,7 @@ const moment = require('moment')
 const slugify = require('slugify')
 const md5File = require('md5-file')
 const sharp = require('sharp')
-
+const replaceall = require('replace-string')
 const {crc32} = require('crc')
 
 /**
@@ -91,7 +91,7 @@ function datEntry(game) {
 	return `
 game (
 	name "${cleanValue(game.name)}"${gameEntries}
-	rom ( name "${cleanValue(game.name)}.tic" size "${cleanValue(game.size)}" md5 "${cleanValue(game.md5)}" crc ${cleanValue(game.crc)} )
+	rom ( name "${cleanValue(game.name).replace('/', '-')}.tic" size "${cleanValue(game.size)}" md5 "${cleanValue(game.md5)}" crc "${cleanValue(game.crc)}" )
 )
 `
 }
@@ -103,21 +103,31 @@ function cleanTitle(title) {
 	if (!title) {
 		return null
 	}
-	let output = title
+	console.log('Title: ', title)
+	let output = replaceall(title.toLowerCase(), '"', "'")
+	console.log('Output1: ', output)
+	output = titleCase(output)
+	console.log('Output2: ', output)
+	output = output
 		.replace('Iiiii', 'IIIII')
 		.replace('Vvvvvv', 'VVVVVV')
 		.replace('Fps', 'FPS')
 		.replace('Wcq', 'WCQ')
 		.replace('3 D', '3D')
+		.replace('3d ', '3D')
+		.replace('3d-', '3D-')
 		.replace('V1 ', 'v1')
 		.replace('Oop ', 'OOP')
 		.replace('Tic ', 'TIC ')
+		.replace('Tic-80', 'TIC-80')
 		.replace('Thetextquest', 'TheTextQuest')
 		.replace('Oneminuteescape', 'OneMinuteEscape')
 		.replace('Tic 80', 'TIC-80')
 		.replace('TIC 80', 'TIC-80')
 		.replace('Rpg', 'RPG')
 		.replace('Rps', 'RPS')
+		.replace('(ost ', '(OST ')
+		.replace('Art+game', 'Art+Game')
 
 	return output.trim()
 }
@@ -126,16 +136,18 @@ async function getThumbnail(id, name) {
 	// Thumbnail
 	mkdirp.sync('thumbnails/Named_Boxarts')
 	let thumbFilename = cleanTitle(name)
-		.replace('/', '')
-		.replace('*', '')
-		.replace('[', '')
-		.replace(']', '')
-		.replace('&', '')
-		.replace('\\', '')
-		.replace(':', '')
-		.replace('`', '')
-		.replace('|', '')
-		.replace('"', '')
+	thumbFilename = replaceall(thumbFilename, '/', '_')
+	thumbFilename = replaceall(thumbFilename, '*', '_')
+	thumbFilename = replaceall(thumbFilename, '[', '_')
+	thumbFilename = replaceall(thumbFilename, '&', '_')
+	thumbFilename = replaceall(thumbFilename, '\\', '_')
+	thumbFilename = replaceall(thumbFilename, ':', '_')
+	thumbFilename = replaceall(thumbFilename, '`', '_')
+	thumbFilename = replaceall(thumbFilename, '<', '_')
+	thumbFilename = replaceall(thumbFilename, '>', '_')
+	thumbFilename = replaceall(thumbFilename, '?', '_')
+	thumbFilename = replaceall(thumbFilename, '|', '_')
+	thumbFilename = replaceall(thumbFilename, '"', '_')
 	const destcover = 'thumbnails/Named_Boxarts/' + thumbFilename + '.png'
 	if (!fs.existsSync(destcover)) {
 		//await timeout.set(500)
@@ -143,10 +155,15 @@ async function getThumbnail(id, name) {
 			url: `https://tic.computer/cart/${id}/cover.gif`,
 			encoding: null
 		}
-		cover = await request(requestOpts)
-		//await timeout.set(500)
-		await sharp(cover)
-			.toFile(destcover)
+		try {
+			cover = await request(requestOpts)
+			await timeout.set(500)
+			await sharp(cover)
+				.toFile(destcover)
+		}
+		catch (error) {
+			console.error(error)
+		}
 	}
 }
 
@@ -171,7 +188,6 @@ async function constructDats() {
 					const cartid = $('.thumbnail a', element).attr('href').split('=')[1]
 					let name = $('h2', element).text()
 					const downloadUrl = `https://tic.computer/cart/${id}/cart.tic`
-					name = titleCase(name)
 					console.log(name)
 					const description = $('.text-muted', element).first().text()
 					let developer = $('.text-muted', element).last().text()
@@ -182,11 +198,10 @@ async function constructDats() {
 					const destcartfilename = `${id}.tic`
 					const destcart = 'carts/' + destcartfilename
 					if (!fs.existsSync(destcart)) {
+						await timeout.set(500)
 						await download(downloadUrl, 'carts', {
 							filename: destcartfilename
 						})
-
-						//await timeout.set(500)
 					}
 
 					const md5 = md5File.sync(destcart)
