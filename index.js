@@ -21,7 +21,8 @@ let databases = {
 	'TIC-80': [
 		'https://tic.computer/play?cat=0&sort=1', // Games
 		'https://tic.computer/play?cat=1&sort=1', // Demos
-		'https://tic.computer/play?cat=3&sort=1'  // Music
+		'https://tic.computer/play?cat=3&sort=1',  // Music
+		'https://tic.computer/play?cat=5&sort=1'  // Demoscene
 	]
 }
 
