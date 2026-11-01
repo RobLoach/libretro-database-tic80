@@ -5,6 +5,6 @@
 	ignore = dirty
 [submodule "thumbnails"]
 	path = thumbnails
-	url = git@github.com:libretro-thumbnails/TIC-80.git
+	url = https://github.com/libretro-thumbnails/TIC-80.git
 	branch = master
 	ignore = dirty

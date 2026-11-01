@@ -1,29 +1,111 @@
-const mkdirp = require('mkdirp')
-const timeout = require('await-timeout')
-const request = require('request-promise');
-const cheerio = require('cheerio')
-const download = require('download')
-const {titleCase} = require('title-case')
-const fs = require('fs')
-const pkg = require('./package.json')
-const sortArray = require('sort-array')
-const moment = require('moment')
-const slugify = require('slugify')
-const md5File = require('md5-file')
-const sharp = require('sharp')
-const replaceall = require('replace-string')
-const {crc32} = require('crc')
+import fs from 'node:fs'
+import crypto from 'node:crypto'
+import zlib from 'node:zlib'
+import { setTimeout as sleep } from 'node:timers/promises'
+import * as cheerio from 'cheerio'
+import sharp from 'sharp'
+import { titleCase } from 'title-case'
+import pkg from './package.json' with { type: 'json' }
+
+const site = 'https://tic80.com'
 
 /**
- * Index of the databases and their URLs.
+ * Index of the databases and the tic80.com categories they're built from.
  */
-let databases = {
+const databases = {
 	'TIC-80': [
-		'https://tic.computer/play?cat=0&sort=1', // Games
-		'https://tic.computer/play?cat=1&sort=1', // Demos
-		'https://tic.computer/play?cat=3&sort=1',  // Music
-		'https://tic.computer/play?cat=5&sort=1'  // Demoscene
+		'games',
+		'tech', // Formerly "Demos"
+		'music',
+		'demoscene'
 	]
+}
+
+/**
+ * How many carts to download at the same time.
+ */
+const concurrency = 4
+
+/**
+ * The fields written to each DAT entry, in order.
+ */
+const datFields = [
+	'description',
+	'homepage',
+	'developer',
+	'publisher',
+	'releaseyear',
+	'releasemonth',
+	'releaseday',
+	'download',
+	'users',
+	'genre',
+	'esrb_rating'
+]
+
+/**
+ * Casing fixes applied after title casing.
+ */
+const titleFixes = [
+	[/\bIiiii\b/g, 'IIIII'],
+	[/\bVvvvvv\b/g, 'VVVVVV'],
+	[/\bFps/g, 'FPS'],
+	[/\bWcq\b/g, 'WCQ'],
+	[/\b3 D\b/g, '3D'],
+	[/\b3d\b/g, '3D'],
+	[/\bV1\b/g, 'v1'],
+	[/\bOop\b/g, 'OOP'],
+	[/\bTic[ -]?80\b/gi, 'TIC-80'],
+	[/\bTic(?= )/g, 'TIC'],
+	[/\bThetextquest\b/g, 'TheTextQuest'],
+	[/\bOneminuteescape\b/g, 'OneMinuteEscape'],
+	[/\bRpg\b/g, 'RPG'],
+	[/\bRps\b/g, 'RPS'],
+	[/\(ost\b/gi, '(OST'],
+	[/\bArt\+game\b/g, 'Art+Game']
+]
+
+/**
+ * Fetch the given URL, retrying on network errors and server errors.
+ */
+async function get(url, attempts = 3) {
+	for (let attempt = 1; ; attempt++) {
+		let response
+		try {
+			response = await fetch(url)
+		}
+		catch (error) {
+			if (attempt >= attempts) {
+				throw error
+			}
+			await sleep(1000 * 2 ** attempt)
+			continue
+		}
+		if (response.ok) {
+			return Buffer.from(await response.arrayBuffer())
+		}
+		const retryable = response.status === 429 || response.status >= 500
+		if (!retryable || attempt >= attempts) {
+			throw new Error(`HTTP ${response.status} for ${url}`)
+		}
+		await sleep(1000 * 2 ** attempt)
+	}
+}
+
+/**
+ * Map over the items, running at most `limit` at a time.
+ */
+async function mapLimit(items, limit, fn) {
+	const results = new Array(items.length)
+	let next = 0
+	async function worker() {
+		while (next < items.length) {
+			const index = next++
+			results[index] = await fn(items[index], index)
+		}
+	}
+	await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+	return results
 }
 
 /**
@@ -35,6 +117,7 @@ function header(title, version, homepage) {
 	description "${title}"
 	version "${version}"
 	homepage "${homepage}"
+	extensions "tic"
 )\n`
 }
 
@@ -42,57 +125,27 @@ function header(title, version, homepage) {
  * Clean the given value to be DAT file safe.
  */
 function cleanValue(val) {
-	if (val && val.replace) {
-		val = val.replace(new RegExp('"', 'g'), '\'')
-	}
-	if (val && val.trim) {
-		val = val.trim()
-	}
-	return val
+	return String(val)
+		.replaceAll('"', '\'')
+		.replace(/\s+/g, ' ')
+		.trim()
 }
 
 /**
  * Construct a DAT entry based on the given game.
  */
 function datEntry(game) {
-	gameEntries = ''
-	if (game.description) {
-		gameEntries += `\n	description "${cleanValue(game.description)}"`
+	let gameEntries = ''
+	for (const field of datFields) {
+		if (game[field]) {
+			gameEntries += `\n	${field} "${cleanValue(game[field])}"`
+		}
 	}
-	if (game.homepage) {
-		gameEntries += `\n	homepage "${cleanValue(game.homepage)}"`
-	}
-	if (game.developer) {
-		gameEntries += `\n	developer "${cleanValue(game.developer)}"`
-	}
-	if (game.publisher) {
-		gameEntries += `\n	publisher "${cleanValue(game.publisher)}"`
-	}
-	if (game.releaseyear) {
-		gameEntries += `\n	releaseyear "${cleanValue(game.releaseyear)}"`
-	}
-	if (game.releasemonth) {
-		gameEntries += `\n	releasemonth "${cleanValue(game.releasemonth)}"`
-	}
-	if (game.releaseday) {
-		gameEntries += `\n	releaseday "${cleanValue(game.releaseday)}"`
-	}
-	if (game.download) {
-		gameEntries += `\n	download "${cleanValue(game.download)}"`
-	}
-	if (game.users) {
-		gameEntries += `\n	users "${cleanValue(game.users)}"`
-	}
-	if (game.genre) {
-		gameEntries += `\n	genre "${cleanValue(game.genre)}"`
-	}
-	if (game.esrb_rating) {
-		gameEntries += `\n	esrb_rating "${cleanValue(game.esrb_rating)}"`
-	}
+	const romName = cleanValue(game.name).replaceAll('/', '-') + '.tic'
 	return `
 game (
 	name "${cleanValue(game.name)}"${gameEntries}
-	rom ( name "${cleanValue(game.name).replace('/', '-')}.tic" size "${cleanValue(game.size)}" md5 "${cleanValue(game.md5)}" crc "${cleanValue(game.crc)}" )
+	rom ( name "${romName}" size "${game.size}" md5 "${game.md5}" crc "${game.crc}" )
 )
 `
 }
@@ -101,156 +154,181 @@ game (
  * Quick clean of the given title.
  */
 function cleanTitle(title) {
-	if (!title) {
-		return null
+	let output = titleCase(title.toLowerCase().replaceAll('"', '\'').replace(/\s+/g, ' ').trim())
+	for (const [pattern, replacement] of titleFixes) {
+		output = output.replace(pattern, replacement)
 	}
-	console.log('Title: ', title)
-	let output = replaceall(title.toLowerCase(), '"', "'")
-	console.log('Output1: ', output)
-	output = titleCase(output)
-	console.log('Output2: ', output)
-	output = output
-		.replace('Iiiii', 'IIIII')
-		.replace('Vvvvvv', 'VVVVVV')
-		.replace('Fps', 'FPS')
-		.replace('Wcq', 'WCQ')
-		.replace('3 D', '3D')
-		.replace('3d ', '3D')
-		.replace('3d-', '3D-')
-		.replace('V1 ', 'v1')
-		.replace('Oop ', 'OOP')
-		.replace('Tic ', 'TIC ')
-		.replace('Tic-80', 'TIC-80')
-		.replace('Thetextquest', 'TheTextQuest')
-		.replace('Oneminuteescape', 'OneMinuteEscape')
-		.replace('Tic 80', 'TIC-80')
-		.replace('TIC 80', 'TIC-80')
-		.replace('Rpg', 'RPG')
-		.replace('Rps', 'RPS')
-		.replace('(ost ', '(OST ')
-		.replace('Art+game', 'Art+Game')
-
-	return output.trim()
+	return output
 }
 
-async function getThumbnail(id, name) {
-	// Thumbnail
-	mkdirp.sync('thumbnails/Named_Boxarts')
-	let thumbFilename = cleanTitle(name)
-	thumbFilename = replaceall(thumbFilename, '/', '_')
-	thumbFilename = replaceall(thumbFilename, '*', '_')
-	thumbFilename = replaceall(thumbFilename, '[', '_')
-	thumbFilename = replaceall(thumbFilename, '&', '_')
-	thumbFilename = replaceall(thumbFilename, '\\', '_')
-	thumbFilename = replaceall(thumbFilename, ':', '_')
-	thumbFilename = replaceall(thumbFilename, '`', '_')
-	thumbFilename = replaceall(thumbFilename, '<', '_')
-	thumbFilename = replaceall(thumbFilename, '>', '_')
-	thumbFilename = replaceall(thumbFilename, '?', '_')
-	thumbFilename = replaceall(thumbFilename, '|', '_')
-	thumbFilename = replaceall(thumbFilename, '"', '_')
-	const destcover = 'thumbnails/Named_Boxarts/' + thumbFilename + '.png'
-	if (!fs.existsSync(destcover)) {
-		//await timeout.set(500)
-		const requestOpts = {
-			url: `https://tic.computer/cart/${id}/cover.gif`,
-			encoding: null
+/**
+ * The libretro thumbnail filename for the given game name.
+ */
+function thumbnailName(name) {
+	return name.replace(/[&*/:`<>?\\|"[]/g, '_')
+}
+
+/**
+ * Scrape every cart listed in the given tic80.com category.
+ */
+async function scrapeCategory(category) {
+	const carts = []
+	for (let page = 0; ; page++) {
+		const html = await get(`${site}/play/${category}/top?page=${page}&partial=1`)
+		const $ = cheerio.load(html.toString())
+		const found = $('div.cart')
+		found.each((_, element) => {
+			const id = $('.cover-card img', element).attr('src').split('/')[2]
+			const href = $('.cover-card a', element).attr('href')
+			const texts = $('.text-muted', element).map((_, el) => $(el).text().trim()).get()
+			let developer = ''
+			if (texts.length && texts[texts.length - 1].startsWith('by ')) {
+				developer = texts.pop().substring(3)
+			}
+			carts.push({
+				id,
+				title: $('h2', element).text(),
+				homepage: href ? site + href : '',
+				description: texts[0] || '',
+				developer,
+				uploader: href ? href.split('/')[2] : '',
+				slug: href ? href.split('/')[3] : ''
+			})
+		})
+		if (!found.length || !$('.catalog-more').length) {
+			break
 		}
-		try {
-			cover = await request(requestOpts)
-			await timeout.set(500)
-			await sharp(cover)
-				.toFile(destcover)
-		}
-		catch (error) {
-			console.error(error)
+	}
+	if (!carts.length) {
+		throw new Error(`No carts found in "${category}". Has the tic80.com markup changed?`)
+	}
+	console.log(`${category}: ${carts.length} carts`)
+	return carts
+}
+
+/**
+ * Give every cart a unique name, appending the developer, then the uploader,
+ * then the page slug, then the ID, to any names that clash. A suffix is only used when it tells
+ * the clashing carts apart.
+ */
+function assignNames(carts) {
+	const suffixes = [
+		(cart) => cleanValue(cart.developer),
+		(cart) => cart.uploader,
+		(cart) => cart.slug,
+		(cart) => cart.id.substring(0, 8)
+	]
+	for (const cart of carts) {
+		cart.name = cleanTitle(cart.title)
+	}
+	for (const suffix of suffixes) {
+		const groups = Map.groupBy(carts, (cart) => thumbnailName(cart.name).toLowerCase())
+		for (const group of groups.values()) {
+			const values = new Set(group.map((cart) => suffix(cart).toLowerCase()))
+			if (group.length > 1 && values.size > 1) {
+				for (const cart of group) {
+					if (suffix(cart)) {
+						cart.name += ` (${suffix(cart)})`
+					}
+				}
+			}
 		}
 	}
 }
 
 /**
- * Scrap information and construct the DATs.
+ * Download the cart, if needed, and add its size and hashes.
+ */
+async function downloadCart(cart) {
+	const file = `carts/${cart.id}.tic`
+	if (!fs.existsSync(file)) {
+		const data = await get(`${site}/cart/${cart.id}/cart.tic`)
+		fs.writeFileSync(file + '.part', data)
+		fs.renameSync(file + '.part', file)
+	}
+	const data = fs.readFileSync(file)
+	return {
+		...cart,
+		download: `${site}/cart/${cart.id}/cart.tic`,
+		size: data.length,
+		md5: crypto.createHash('md5').update(data).digest('hex'),
+		crc: zlib.crc32(data).toString(16).padStart(8, '0')
+	}
+}
+
+/**
+ * Download the cart's cover as its boxart thumbnail, if needed.
+ */
+async function downloadThumbnail(cart) {
+	const file = `thumbnails/Named_Boxarts/${thumbnailName(cart.name)}.png`
+	if (!fs.existsSync(file)) {
+		const cover = await get(`${site}/cart/${cart.id}/cover.gif`)
+		await sharp(cover).png().toFile(file)
+	}
+}
+
+/**
+ * Scrape information and construct the DATs.
  */
 async function constructDats() {
-	mkdirp.sync('carts')
-	for (let databaseName in databases) {
+	fs.mkdirSync('carts', { recursive: true })
+	fs.mkdirSync('thumbnails/Named_Boxarts', { recursive: true })
+	fs.mkdirSync('libretro-database/dat', { recursive: true })
+	const version = new Date().toISOString().substring(0, 10).replaceAll('-', '.')
+	let failures = 0
+
+	for (const [databaseName, categories] of Object.entries(databases)) {
 		console.log(databaseName)
-		let finalList = []
-		let urls = databases[databaseName]
-
-		const requests = urls.map(url => request(url))
-		Promise.all(requests).then((datas) => {
-			entries = []
-
-			for (let html of datas) {
-				const $ = cheerio.load(html)
-				const result = $('div.cart').map(async (index, element) => {
-					const id = $('img', element).attr('src').split('/')[2]
-					const cartid = $('.thumbnail a', element).attr('href').split('=')[1]
-					let name = $('h2', element).text()
-					const downloadUrl = `https://tic.computer/cart/${id}/cart.tic`
-					console.log(name)
-					const description = $('.text-muted', element).first().text()
-					let developer = $('.text-muted', element).last().text()
-					if (developer.startsWith('by ')) {
-						developer = developer.substring(3)
-					}
-
-					const destcartfilename = `${id}.tic`
-					const destcart = 'carts/' + destcartfilename
-					if (!fs.existsSync(destcart)) {
-						await timeout.set(500)
-						await download(downloadUrl, 'carts', {
-							filename: destcartfilename
-						})
-					}
-
-					const md5 = md5File.sync(destcart)
-
-					const stat = fs.statSync(destcart)
-					const size = stat.size
-
-					//await timeout.set(500)
-					getThumbnail(id, name)
-
-					const crcVal = crc32(fs.readFileSync(destcart)).toString(16)
-
-					return {
-						name: cleanTitle(name),
-						id: id,
-						size: size,
-						crc: crcVal,
-						download: downloadUrl,
-						md5: md5,
-						cartid: cartid,
-						homepage: cartid ? "https://tic.computer/play?cart=" + cartid : '',
-						description: description,
-						developer: developer
-					}
-				})
-
-				for (const item of result.get()) {
-					entries.push(item)
+		const carts = new Map()
+		for (const category of categories) {
+			for (const cart of await scrapeCategory(category)) {
+				if (!carts.has(cart.id)) {
+					carts.set(cart.id, cart)
 				}
 			}
+		}
+		const list = [...carts.values()]
+		assignNames(list)
 
-			let outputDat = header(databaseName, pkg.version, pkg.homepage)
-
-			Promise.all(entries).then((entries) => {
-				let sorted = sortArray(entries, {
-					by: ['name', 'cartid']
-				})
-				for (let entry of sorted) {
-					outputDat += datEntry(entry)
-				}
-
-				mkdirp.sync('libretro-database/dat')
-				fs.writeFileSync('libretro-database/dat/' + databaseName + '.dat', outputDat)
-			})
+		const entries = await mapLimit(list, concurrency, async (cart, index) => {
+			let entry
+			try {
+				entry = await downloadCart(cart)
+			}
+			catch (error) {
+				failures++
+				console.error(`Failed to download cart "${cart.title}" (${cart.id}): ${error.message}`)
+				return null
+			}
+			try {
+				await downloadThumbnail(entry)
+			}
+			catch (error) {
+				failures++
+				console.error(`Failed to download thumbnail "${cart.title}" (${cart.id}): ${error.message}`)
+			}
+			if ((index + 1) % 100 === 0) {
+				console.log(`${index + 1}/${list.length}`)
+			}
+			return entry
 		})
 
+		const sorted = entries
+			.filter(Boolean)
+			.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1)
+
+		let outputDat = header(databaseName, version, pkg.homepage)
+		for (const entry of sorted) {
+			outputDat += datEntry(entry)
+		}
+		fs.writeFileSync(`libretro-database/dat/${databaseName}.dat`, outputDat)
+		console.log(`Wrote ${sorted.length} entries to libretro-database/dat/${databaseName}.dat`)
 	}
 
-};
+	if (failures) {
+		console.error(`${failures} downloads failed`)
+		process.exitCode = 1
+	}
+}
 
-constructDats();
+await constructDats()
